@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang='es'>
+<head>
+    <title>CONTRATACIÓN DIRECTA</title>
+    <meta charset='utf-8'>
+    <script src="capacitor.js"></script>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=no' />
+    <meta name="theme-color" content="#ffffff" />
+    <style>
+      :root { --primary: #007bff; --success: #28a745; --dark: #343a40; --cantv-blue: #005696; }
+      body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+      .container { max-width: 800px; margin: auto; }
+      .card { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+
+      .header-logo { text-align: center; margin-bottom: 20px; }
+      .header-logo img { max-width: 200px; }
+
+      /* INTERFAZ */
+      .hidden { display: none; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+      label { display: block; font-weight: bold; margin-top: 10px; font-size: 0.85rem; color: #555; }
+      input, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 0.9rem; }
+      button { width: 100%; padding: 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 20px; transition: 0.3s; }
+      .btn-login { background: var(--cantv-blue); color: white; }
+      .btn-gen { background: var(--dark); color: white; }
+      .btn-print { background: var(--success); color: white; }
+      .btn-share { background: #6c757d; color: white; margin-top: 10px; }
+
+      /* FORMATO MEMO (VISTA PREVIA E IMPRESIÓN) */
+      #memo-preview { background: white; padding: 50px; border: 1px solid #ddd; margin-top: 30px; display: none; }
+      .memo-head { margin-bottom: 25px; line-height: 1.6; }
+      table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+      th, td { border: 1px solid black; padding: 10px; text-align: center; font-size: 13px; }
+      th { background: #f2f2f2; }
+
+      @media print {
+        .no-print { display: none !important; }
+        #memo-preview { display: block !important; border: none; padding: 0; margin: 0; }
+        body { background: white; padding: 0; }
+      }
+    </style>
+    <!-- Dependencies for PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+    <div class="header-logo">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/0/0d/Cantv_logo.png" alt="CANTV Logo">
+    </div>
+
+    <div id="login-screen" class="container no-print">
+      <div class="card" style="max-width: 400px; margin: auto;">
+        <h2 style="text-align:center;">Acceso al Sistema</h2>
+        <label>Usuario</label>
+        <input type="text" id="user" placeholder="nombre.apellido">
+        <label>Contraseña</label>
+        <input type="password" id="pass" placeholder="••••••••">
+        <button class="btn-login" onclick="validarAcceso()">Entrar</button>
+      </div>
+    </div>
+
+    <div id="form-screen" class="container no-print hidden">
+      <div class="card">
+        <h2 style="color:#d32f2f; margin-top:0;">Editor de Memo Institucional</h2>
+
+        <div class="grid">
+          <div>
+            <label>Código de Memo:</label>
+            <input type="text" id="editMemo" value="GGP/MDF/2026/001">
+          </div>
+          <div>
+            <label>N° Expediente:</label>
+            <input type="text" id="editExp" value="C25GGPR000210">
+          </div>
+        </div>
+
+        <label>Para (Destinatario):</label>
+        <input type="text" id="editPara" value="MAYOSLEIDA LUCENA - Gerente Procura Bienes y Servicios">
+
+        <label>De (Remitente):</label>
+        <input type="text" id="editDe" value="EVELIN ARTIGAS - Gerente Gestión de Procura">
+
+        <label>Fecha del Documento:</label>
+        <input type="text" id="editFechaDoc" value="5 de abril de 2026">
+
+        <label>Objeto / Justificación:</label>
+        <textarea id="editObjeto" rows="4">MODIFICACIÓN N° 1 DE LOS CONTRATOS DE LAS ORDENES DE SERVICIOS (PEDIDOS) AMPARADO EN LAS CONDICIONES GENERALES DE CONTRATACIÓN...</textarea>
+
+        <label>Fecha de Inicio para Línea de Tiempo:</label>
+        <input type="date" id="fechaCalendario">
+
+        <button class="btn-gen" onclick="actualizarVistaMemo()">Visualizar y Calcular Tiempos</button>
+      </div>
+    </div>
+
+    <div id="memo-preview" class="container">
+      <div id="memo-content">
+          <div class="memo-head">
+            <strong id="resMemo"></strong><br><br>
+            <strong>Para:</strong> <span id="resPara"></span><br>
+            <strong>De:</strong> <span id="resDe"></span><br>
+            <strong>Asunto:</strong> Remisión de Expediente N° <span id="resExp"></span><br>
+            <strong>Fecha:</strong> <span id="resFecha"></span>
+          </div>
+
+          <div style="text-align: justify; font-size: 15px;">
+            <p>Tengo a bien dirigirme a usted para remitir el expediente correspondiente a: <span id="resObjeto"></span></p>
+
+            <p><strong>Línea de tiempo de estricto cumplimiento:</strong></p>
+            <table>
+              <thead>
+                <tr>
+                  <th>ETAPA DEL PROCESO</th>
+                  <th>DÍAS</th>
+                  <th>FECHA ESTIMADA</th>
+                </tr>
+              </thead>
+              <tbody id="tablaResultados"></tbody>
+            </table>
+
+            <p>Sin más que hacer referencia se despide,</p>
+            <div style="margin-top:50px;">
+              <strong id="resFirma"></strong><br>
+              Gerente Gestión de Procura
+            </div>
+          </div>
+      </div>
+
+      <button class="no-print btn-print" onclick="window.print()">Confirmar e Imprimir</button>
+      <button class="no-print btn-share" id="btn-share-pdf" onclick="compartirPDF()">Compartir como PDF</button>
+    </div>
+
+    <script>
+      // Cargar datos guardados si existen
+      window.onload = () => {
+        const savedData = localStorage.getItem('memoData');
+        if (savedData) {
+          const data = JSON.parse(savedData);
+          document.getElementById('editMemo').value = data.memo;
+          document.getElementById('editExp').value = data.exp;
+          document.getElementById('editPara').value = data.para;
+          document.getElementById('editDe').value = data.de;
+          document.getElementById('editFechaDoc').value = data.fechaDoc;
+          document.getElementById('editObjeto').value = data.objeto;
+        }
+      };
+
+      function validarAcceso() {
+        if(document.getElementById('user').value && document.getElementById('pass').value) {
+          document.getElementById('login-screen').classList.add('hidden');
+          document.getElementById('form-screen').classList.remove('hidden');
+        }
+      }
+
+      function esHabil(f) {
+        const d = f.getDay(); // 0=Dom, 6=Sab
+        return d !== 0 && d !== 6;
+      }
+
+      function sumarHabiles(fOrig, dias) {
+        let f = new Date(fOrig);
+        let c = 0;
+        while(c < dias) {
+          f.setDate(f.getDate() + 1);
+          if(esHabil(f)) c++;
+        }
+        return new Date(f);
+      }
+
+      function actualizarVistaMemo() {
+        const memo = document.getElementById('editMemo').value;
+        const para = document.getElementById('editPara').value;
+        const de = document.getElementById('editDe').value;
+        const exp = document.getElementById('editExp').value;
+        const fechaDoc = document.getElementById('editFechaDoc').value;
+        const objeto = document.getElementById('editObjeto').value;
+
+        // Guardar en localStorage
+        localStorage.setItem('memoData', JSON.stringify({ memo, para, de, exp, fechaDoc, objeto }));
+
+        document.getElementById('resMemo').innerText = memo;
+        document.getElementById('resPara').innerText = para;
+        document.getElementById('resDe').innerText = de;
+        document.getElementById('resExp').innerText = exp;
+        document.getElementById('resFecha').innerText = fechaDoc;
+        document.getElementById('resObjeto').innerText = objeto;
+        document.getElementById('resFirma').innerText = de.split(' - ')[0];
+
+        const inicioStr = document.getElementById('fechaCalendario').value;
+        if(!inicioStr) { alert("Selecciona una fecha de inicio"); return; }
+
+        const flujo = [
+          {t: "Recepción y Registro", d: 1},
+          {t: "Análisis y Justificación", d: 3},
+          {t: "Revisión de Gerencia", d: 2},
+          {t: "Remisión Final", d: 1}
+        ];
+
+        let html = "";
+        let fPuntero = new Date(inicioStr);
+
+        flujo.forEach(p => {
+          fPuntero = sumarHabiles(fPuntero, p.d);
+          html += `<tr><td>${p.t}</td><td>${p.d}</td><td>${fPuntero.toLocaleDateString('es-VE', { weekday:'long', day:'numeric', month:'long' })}</td></tr>`;
+        });
+
+        document.getElementById('tablaResultados').innerHTML = html;
+        document.getElementById('memo-preview').style.display = 'block';
+        window.scrollTo(0, document.body.scrollHeight);
+      }
+
+      async function compartirPDF() {
+        const { jsPDF } = window.jspdf;
+        const element = document.getElementById('memo-content');
+        const btnShare = document.getElementById('btn-share-pdf');
+        btnShare.innerText = 'Generando PDF...';
+        btnShare.disabled = true;
+
+        try {
+          const canvas = await html2canvas(element, { scale: 2 });
+          const imgData = canvas.toDataURL('image/png');
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const imgProps = pdf.getImageProperties(imgData);
+          const pdfWidth = pdf.internal.pageSize.getWidth();
+          const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+          pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+
+          // Capacitor Share
+          if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+            const pdfBase64 = pdf.output('datauristring').split(',')[1];
+            const { Filesystem } = Capacitor.Plugins;
+            const { Share } = Capacitor.Plugins;
+            const { Directory } = Capacitor.Plugins;
+
+            const fileName = 'Memo_' + new Date().getTime() + '.pdf';
+            const result = await Filesystem.writeFile({
+              path: fileName,
+              data: pdfBase64,
+              directory: Directory.Cache
+            });
+
+            await Share.share({
+              title: 'Compartir Memo',
+              text: 'Aquí tienes el memo institucional.',
+              url: result.uri,
+              dialogTitle: 'Compartir con...'
+            });
+          } else {
+            pdf.save('memo.pdf');
+          }
+        } catch (error) {
+          console.error('Error al generar PDF:', error);
+          alert('Error al generar el PDF: ' + error.message);
+        } finally {
+          btnShare.innerText = 'Compartir como PDF';
+          btnShare.disabled = false;
+        }
+      }
+    </script>
+</body>
+</html>
